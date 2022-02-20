@@ -1,7 +1,6 @@
 from intake.source import base
 from . import __version__
 
-
 class SQLSource(base.DataSource):
     """
     One-shot SQL to dataframe reader (no partitioning)
@@ -30,12 +29,41 @@ class SQLSource(base.DataSource):
             'metadata': metadata,
         }
 
-        self._uri = uri
+        self._uri: str = uri
         self._sql_expr = sql_expr
         self._sql_kwargs = sql_kwargs
         self._dataframe = None
 
         super(SQLSource, self).__init__(metadata=metadata)
+
+    def _redact_password_from_string(self, original_string: str) -> str:
+        try:
+            db_kind, conn = self._uri.split("://")
+        except ValueError:
+            return original_string
+
+        if "@" in conn:
+            creds, host = conn.split("@")
+            if ":" in creds:
+                user, password = creds.split(":")
+            else:
+                user = creds
+                password = ""
+
+            if password:
+                return original_string.replace(password, '*'*len(password))
+
+        return original_string
+
+    def __repr__(self) -> str:
+        original_str: str = super().__repr__()
+        return self._redact_password_from_string(original_str)
+
+    def _yaml(self):
+        data = super()._yaml()
+        part = data["sources"][self.name]["args"]["uri"]
+        data["sources"][self.name]["args"]["uri"] = self._redact_password_from_string(part)
+        return data
 
     def _load(self):
         import pandas as pd
